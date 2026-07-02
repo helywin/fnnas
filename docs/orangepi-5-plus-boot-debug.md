@@ -422,6 +422,80 @@ fnOS/FnNAS 的使用形态更接近 headless NAS 系统，而不是接显示器�
 - HDMI 无画面，且路由器无 DHCP、无 ARP、Web/SSH 端口全不通：仍应优先按启动链问题排查。
 - 蓝灯常亮或不红蓝闪烁不能单独定性，因为当前 FnNAS DTB 的 LED 配置和厂家 6.1 DTS 不一致。
 
+## 局域网设备发现
+
+官方明确提供 App 级局域网发现能力：
+
+- `如何安装 App 并连接到飞牛 NAS` 文档说明，App 登录页可进入 `发现局域网内设备`，会自动发现并展示同局域网下的飞牛 NAS 设备。
+  - https://help.fnnas.com/articles/v1/start/install-app
+
+需要注意：
+
+- 官方文档确认“App 能发现设备”，但没有公开说明底层使用的是 mDNS、SSDP、WS-Discovery、NetBIOS 还是私有广播。
+- 当前镜像 rootfs 片段中通过 `strings` 能看到发现相关服务名，这是协议能力线索，不等同于确认 App 使用的具体协议。
+
+镜像线索：
+
+```text
+/lib/systemd/system/avahi-daemon.service
+/etc/systemd/system/upnp.service
+/etc/systemd/system/wsdd2.service
+/etc/systemd/system/minidlna.service
+/etc/systemd/system/nmbd.service
+/etc/systemd/system/smbd.service
+```
+
+这些服务大致对应：
+
+- `avahi-daemon`：mDNS / DNS-SD。
+- `upnp`、`minidlna`：UPnP / SSDP / DLNA 方向。
+- `wsdd2`：Windows WS-Discovery。
+- `nmbd` / `smbd`：NetBIOS / SMB 发现和文件共享。
+
+推荐查找 IP 的顺序：
+
+1. 使用手机 fnOS App：登录页底部 `发现局域网内设备`。
+2. 查看路由器 DHCP 租约，设备名可能显示为 `debian`、`fnos`、`fnnas` 或板卡 hostname。
+3. 在同网段主机上做 ARP/邻居表/端口扫描。
+4. 再尝试 mDNS、SSDP、NetBIOS、WS-Discovery。
+
+Linux 常用命令：
+
+```bash
+# 已知网络邻居
+arp -a
+ip neigh
+
+# 主动扫描本地二层网段
+sudo arp-scan --localnet
+
+# Web/SSH 端口扫描
+nmap -p 22,80,443,5666,5667,8000,8001 192.168.1.0/24
+
+# mDNS / DNS-SD
+avahi-browse -art | grep -iE 'fnos|fnnas|debian|http|smb'
+
+# NetBIOS
+nmblookup '*'
+nbtscan 192.168.1.0/24
+
+# SSDP / UPnP
+gssdp-discover -t ssdp:all
+```
+
+没有 `gssdp-discover` 时，可用 UDP multicast 发 SSDP M-SEARCH：
+
+```bash
+printf 'M-SEARCH * HTTP/1.1\r\nHOST:239.255.255.250:1900\r\nMAN:"ssdp:discover"\r\nMX:2\r\nST:ssdp:all\r\n\r\n' \
+| socat - UDP4-DATAGRAM:239.255.255.250:1900,ip-multicast-ttl=2
+```
+
+判断规则：
+
+- App 或任一发现协议能找到设备：说明系统至少已经启动到网络服务阶段。
+- DHCP/ARP/端口/mDNS/SSDP/NetBIOS/WS-Discovery 全无：更像启动链未完成、网卡驱动未起来、网络未接通或设备不在同一二层网络。
+- 如果发现协议能看到设备但 `5666` / `5667` 不通，应转向 Web 服务、firewall、nginx 或 fnOS 服务本身排查。
+
 ## SPI Flash 风险
 
 Orange Pi 5 Plus 官方配置明确：
@@ -593,6 +667,8 @@ FnNAS 可能已经启动但无 HDMI 或 LED 行为不同。应检查：
 
 - 路由器 DHCP 租约。
 - 设备是否有 ARP。
+- App 是否能在 `发现局域网内设备` 中看到设备。
+- mDNS / SSDP / NetBIOS / WS-Discovery 是否能发现设备。
 - SSH 是否开放。
 - FnNAS Web 服务端口是否开放。重点检查 `5666`、`5667`，同时兼容检查 `8000`、`8001`。
 
