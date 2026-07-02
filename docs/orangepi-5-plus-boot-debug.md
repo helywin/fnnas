@@ -1,6 +1,6 @@
 # Orange Pi 5 Plus FnNAS 镜像启动问题排查笔记
 
-本文档记录 2026-07-02 对 FnNAS Rockchip / Orange Pi 5 Plus 镜像启动问题的排查结论、证据、已做修复和后续迭代方向。
+本文档记录 2026-07-02 至 2026-07-03 对 FnNAS Rockchip / Orange Pi 5 Plus 镜像启动、网络和 PostgreSQL 服务问题的排查结论、证据、已做修复和后续迭代方向。
 
 目标设备：
 
@@ -12,9 +12,87 @@
 - 用户提供内核源码包：`/home/jiang/Downloads/orange-pi-6.1-rk35xx.tar.gz`
 - 官方构建源码：`https://github.com/orangepi-xunlong/orangepi-build`
 
-## 当前结论
+## 最新基线
 
-目前最可疑且已经修复的点是：FnNAS 给 Rockchip 平台创建 BOOT 分区时使用了宿主机默认 ext4 特性，生成的 BOOT 分区带有 `64bit` 和 `metadata_csum`。Orange Pi 5 Plus 官方构建使用的是 Rockchip 旧 U-Boot `v2017.09-rk3588`，这类 U-Boot 对较新的 ext4 特性支持不完整，可能无法稳定读取 `/boot/boot.scr`、`/boot/Image`、`/boot/uInitrd` 或 DTB。
+当前 Orange Pi 5 Plus 默认验证基线使用 `6.18.18-trim` 内核，不再把官方 `6.1.43-rockchip-rk3588` 作为默认产物。官方 6.1.43 仍可作为网卡/DTB 对照排查用。
+
+当前推荐本地镜像：
+
+```text
+\\wsl.localhost\Ubuntu-24.04\root\fnnas-build\manual-fat\fnnas_rockchip_orangepi-5-plus_official-script-kernel6.18.18_dbfix.img
+```
+
+校验：
+
+```text
+SHA256: e299b91a3aa1a46e2578023c67b57afee04d588a1edad9611812d848f4f83467
+Kernel: Linux version 6.18.18-trim
+Modules: 6.18.18-trim
+```
+
+该镜像保留已验证能启动的 Orange Pi 官方 `boot.scr/orangepiEnv.txt` 启动方式，BOOT 分区加载 `Image`、`uInitrd`、`dtb/rockchip/rk3588-orangepi-5-plus.dtb` 后进入 `6.18.18-trim`。
+
+串口登录默认账户：
+
+```text
+root / root
+```
+
+## PostgreSQL 根因
+
+PostgreSQL 启动失败的真实根因不是数据库损坏，也不是 `localhost` 解析本身，而是 ROOTFS 中 `/usr/sbin` 被打包成了 `777`：
+
+```text
+drwxrwxrwx 777 root:root /usr/sbin
+```
+
+Debian 的 PostgreSQL 启动脚本 `/usr/bin/pg_ctlcluster` 使用 Perl taint mode：
+
+```text
+#!/usr/bin/perl -wT
+```
+
+当 PATH 中包含 world-writable 的 `/usr/sbin` 时，`pg_ctlcluster` 直接拒绝运行：
+
+```text
+Insecure directory in $ENV{PATH} while running with -T switch at /usr/share/perl5/PgCommon.pm line 1276.
+```
+
+串口现场验证命令：
+
+```bash
+chmod 755 /usr/sbin
+systemctl reset-failed postgresql@15-main.service postgresql.service
+systemctl start postgresql@15-main.service
+pg_lsclusters
+```
+
+验证结果：
+
+```text
+postgresql@15-main.service: active (running)
+15 main 5432 online postgres /var/lib/postgresql/15/main /var/log/postgresql/postgresql-15-main.log
+```
+
+已在 `renas` 的 `refactor_rootfs()` 中固化：
+
+- 将 `usr/local/sbin`、`usr/local/bin`、`usr/sbin`、`usr/bin` 统一修正为 `root:root 755`。
+- 如果镜像包含 PostgreSQL，创建并修正 `var/log/postgresql`。
+- 将 PostgreSQL 监听地址收敛为 `127.0.0.1`，与现有 `pg_hba.conf` 的本地访问策略匹配。
+- Orange Pi 5 Plus 生成官方风格 `orangepiEnv.txt`，并用 `mkimage` 生成对应 `boot.scr`。
+- Orange Pi 5 Plus 使用官方风格 FAT BOOT 分区布局：BOOT 起始 30MiB，大小 1024MiB。
+
+关键期望权限：
+
+```text
+drwxr-xr-x 755 root:root /usr/sbin
+drwxr-xr-x 755 root:root /usr/bin
+drwxrwxr-t 1775 root:postgres /var/log/postgresql
+```
+
+## 启动链结论
+
+早期最可疑且已经修复的启动点是：FnNAS 给 Rockchip 平台创建 BOOT 分区时使用了宿主机默认 ext4 特性，生成的 BOOT 分区带有 `64bit` 和 `metadata_csum`。Orange Pi 5 Plus 官方构建使用的是 Rockchip 旧 U-Boot `v2017.09-rk3588`，这类 U-Boot 对较新的 ext4 特性支持不完整，可能无法稳定读取 `/boot/boot.scr`、`/boot/Image`、`/boot/uInitrd` 或 DTB。
 
 同时，fnOS/FnNAS 应按 headless NAS 系统对待：日常入口是 Web/App，不是 HDMI 本地桌面。HDMI 无显示不能单独证明系统没启动，应同时检查 DHCP、ARP、SSH 和 Web 端口。
 
