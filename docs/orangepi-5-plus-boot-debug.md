@@ -16,6 +16,8 @@
 
 目前最可疑且已经修复的点是：FnNAS 给 Rockchip 平台创建 BOOT 分区时使用了宿主机默认 ext4 特性，生成的 BOOT 分区带有 `64bit` 和 `metadata_csum`。Orange Pi 5 Plus 官方构建使用的是 Rockchip 旧 U-Boot `v2017.09-rk3588`，这类 U-Boot 对较新的 ext4 特性支持不完整，可能无法稳定读取 `/boot/boot.scr`、`/boot/Image`、`/boot/uInitrd` 或 DTB。
 
+同时，fnOS/FnNAS 应按 headless NAS 系统对待：日常入口是 Web/App，不是 HDMI 本地桌面。HDMI 无显示不能单独证明系统没启动，应同时检查 DHCP、ARP、SSH 和 Web 端口。
+
 已在 `renas` 中修复为：
 
 ```bash
@@ -387,6 +389,39 @@ FnNAS 镜像解出的 DTB 中已看到：
 
 这说明 DTB 至少不是简单地完全关闭 eMMC 或 HDMI。
 
+## Headless 系统判断
+
+fnOS/FnNAS 的使用形态更接近 headless NAS 系统，而不是接显示器使用的桌面发行版。后续验证不能只看 HDMI 有没有画面。
+
+官方资料依据：
+
+- `如何安装 App 并连接到飞牛 NAS`：说明安装并完成初始化后，通过路由器找到飞牛 NAS 的 IP，可用 IP、域名或 FN ID 连接；HTTP 默认端口为 `5666`，HTTPS 默认端口为 `5667`，并兼容旧的 `8000` / `8001` 端口。
+  - https://help.fnnas.com/articles/v1/start/install-app
+- `如何修改飞牛系统的端口`：说明 V0.8.22 之后默认 HTTP 端口改为 `5666`，HTTPS 端口改为 `5667`；公测阶段仍继续占用 `8000` 和 `8001`。
+  - https://help.fnnas.com/articles/v1/settings/port-customization
+- `Rockchip 瑞芯微系列 TF 卡刷教程`：刷好后直接插入设备启动，未把 HDMI 图形界面作为日常入口。
+  - https://help.fnnas.com/articles/v1/contact/arm-rk-tf
+- `Amlogic 利用 USB U盘刷机教程`：完成 eMMC 烧录后，最后通过 IP 访问 fnOS 飞牛 NAS 界面。
+  - https://help.fnnas.com/articles/v1/contact/arm-amlogic-usb
+
+本仓库 README 也采用同样路径：
+
+```text
+在路由器管理界面中查找新上线的名为 debian 的设备，获取其 IP 地址，
+然后通过浏览器访问 http://192.168.1.15:5666 进入飞牛账号创建界面。
+```
+
+文件位置：
+
+- `README.cn.md`
+- `README.md`
+
+判断规则：
+
+- HDMI 无画面，但 DHCP 出现、端口 `5666` / `5667` / `8000` / `8001` 可访问：更像正常 headless 启动或 HDMI/DTB/显示链路问题。
+- HDMI 无画面，且路由器无 DHCP、无 ARP、Web/SSH 端口全不通：仍应优先按启动链问题排查。
+- 蓝灯常亮或不红蓝闪烁不能单独定性，因为当前 FnNAS DTB 的 LED 配置和厂家 6.1 DTS 不一致。
+
 ## SPI Flash 风险
 
 Orange Pi 5 Plus 官方配置明确：
@@ -559,13 +594,13 @@ FnNAS 可能已经启动但无 HDMI 或 LED 行为不同。应检查：
 - 路由器 DHCP 租约。
 - 设备是否有 ARP。
 - SSH 是否开放。
-- FnNAS Web 服务端口是否开放。
+- FnNAS Web 服务端口是否开放。重点检查 `5666`、`5667`，同时兼容检查 `8000`、`8001`。
 
 示例：
 
 ```bash
 arp -a
-nmap -p 22,80,443,5666 <device-ip>
+nmap -p 22,80,443,5666,5667,8000,8001 <device-ip>
 ```
 
 ## 后续迭代建议
@@ -660,5 +695,5 @@ strings -a idbloader.img | grep -E 'DDR Version|U-Boot SPL'
 
 - 目前“BOOTFS ext4 特性不兼容”是强证据支持的主假设，但没有串口日志前不能声称 100% 根因。
 - “蓝灯常亮 / 没有红蓝闪烁”不是充分证据，因为 FnNAS 镜像 DTB 的 LED 配置和厂家 DTS 不同。
-- “HDMI 无输出”也不是充分证据，系统可能已经 headless 启动，应同时查 DHCP/SSH/Web。
+- “HDMI 无输出”也不是充分证据，fnOS/FnNAS 本身应按 headless NAS 系统验证，应同时查 DHCP/ARP/SSH/Web。
 - SPI Flash 一旦涉及擦写，必须先备份，且默认流程不要自动执行。
