@@ -768,7 +768,7 @@ make_image() {
     if [[ "${bootfs_type}" == "fat32" ]]; then
         mkfs.vfat -F 32 -i "${FAT_ID_RAW}" -n "BOOT" ${loop_new}p1 >/dev/null 2>&1
     else
-        mkfs.ext4 -F -q -U ${BOOT_UUID} -L "BOOT" -b 4k -m 0 ${loop_new}p1 >/dev/null 2>&1
+        mkfs.ext4 -F -q -O ^64bit,^metadata_csum -U ${BOOT_UUID} -L "BOOT" -b 4k -m 0 ${loop_new}p1 >/dev/null 2>&1
     fi
 
     # Format ROOTFS partition
