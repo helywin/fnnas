@@ -440,7 +440,7 @@ download_depends() {
         git_pull_dir "${uboot_repo}" main "${git_tmp_path}"
         # Move the u-boot files to the storage directory
         mkdir -p "${uboot_path}"
-        cp -af --no-preserve=ownership "${git_tmp_path}/u-boot/." "${uboot_path}" ||
+        cp -af --update=none --no-preserve=ownership "${git_tmp_path}/u-boot/." "${uboot_path}" ||
             error_msg "fnnas: u-boot download failed."
         echo -e "${INFO} fnnas: u-boot download completed."
         # Delete temporary files
@@ -456,7 +456,7 @@ download_depends() {
         git_pull_dir "${firmware_repo}" main "${git_tmp_path}"
         # Move the firmware files to the storage directory
         mkdir -p "${firmware_path}"
-        cp -af --no-preserve=ownership "${git_tmp_path}/firmware/." "${firmware_path}" ||
+        cp -af --update=none --no-preserve=ownership "${git_tmp_path}/firmware/." "${firmware_path}" ||
             error_msg "fnnas: firmware download failed."
         echo -e "${INFO} fnnas: firmware download completed."
         # Delete temporary files
