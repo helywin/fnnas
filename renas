@@ -471,11 +471,11 @@ download_depends() {
     # Remove the special files in the [ sbin ] directory of the Armbian system
     find "${git_tmp_path}" -type d -path "*/platform-files/*/rootfs/usr/sbin" -prune -exec rm -rf {} +
     # Move the platform files to the storage directory
-    cp -afn --no-preserve=ownership "${git_tmp_path}/build-armbian/armbian-files/platform-files/." "${platform_files}" ||
+    cp -af --update=none --no-preserve=ownership "${git_tmp_path}/build-armbian/armbian-files/platform-files/." "${platform_files}" ||
         error_msg "fnnas: platform-files download failed."
     echo -e "${INFO} fnnas: platform-files download completed."
     # Move the different files to the storage directory
-    cp -afn --no-preserve=ownership "${git_tmp_path}/build-armbian/armbian-files/different-files/." "${different_files}" ||
+    cp -af --update=none --no-preserve=ownership "${git_tmp_path}/build-armbian/armbian-files/different-files/." "${different_files}" ||
         error_msg "fnnas: different-files download failed."
     echo -e "${INFO} fnnas: different-files download completed."
     # Delete temporary files
