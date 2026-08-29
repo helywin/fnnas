@@ -7,7 +7,7 @@
 
 [FnNAS](https://fnnas.com/) 是一款基于最新 Linux 内核（Debian 发行版）深度定制的操作系统。它具备出色的硬件兼容能力，全面支持主流 x86 及 Arm64 设备，支持用户自主组建 NAS 并灵活扩展外部存储。现在，您可以轻松将电视盒子的 Android TV 系统替换为 FnNAS，将其打造为一台功能强大的私有数据存储服务器。
 
-本项目得益于众多 [贡献者](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/CONTRIBUTORS.md) 的持续贡献，并在 FnNAS 官方技术专家的指导下，为搭载 `Amlogic`、`Rockchip` 和 `Allwinner` 芯片的电视盒子构建了 Arm64 架构适配的 FnNAS 系统。构建版本完整继承了官方系统的全部功能，支持写入 eMMC 启动以及内核在线更新。最新固件请前往 [Releases](https://github.com/ophub/fnnas/releases) 页面下载。欢迎 `Fork` 本项目进行个性化定制。如果本项目对您有所帮助，请点击仓库右上角的 `Star` ⭐ 以示支持！
+本项目得益于众多 [贡献者](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/CONTRIBUTORS.md) 的持续贡献，并在 FnNAS 官方技术专家的指导下，为搭载 `Amlogic`、`Rockchip` 和 `Allwinner` 芯片的电视盒子构建了 Arm64 架构适配的 FnNAS 系统。构建版本完整继承了官方系统的全部功能，支持写入 eMMC 启动以及内核在线更新。最新固件请前往 [⬇️Releases](https://github.com/ophub/fnnas/releases) 页面下载。欢迎 `Fork` 本项目进行个性化定制。如果本项目对您有所帮助，请点击仓库右上角的 `⭐Star` 以示支持！
 
 ## FnNAS 固件默认信息
 
@@ -50,7 +50,7 @@
 | h6 | [Vplus](https://github.com/ophub/amlogic-s9xxx-armbian/issues/1100), [Tanix-TX6](https://github.com/ophub/amlogic-s9xxx-armbian/issues/3534), [TX6-H](https://github.com/ophub/amlogic-s9xxx-armbian/issues/3528), [T95-max](https://github.com/ophub/fnnas/issues/546), [TQC-A01](https://github.com/ophub/amlogic-s9xxx-armbian/pull/1638) | [fnnas](https://github.com/ophub/fnnas/releases/tag/kernel_fnnas) |
 
 > [!TIP]
-> 目前 [s905 系列的盒子](https://github.com/ophub/amlogic-s9xxx-armbian/issues/1173)仅支持从 `TF/SD/USB` 启动使用，其他型号的盒子均支持写入 `eMMC` 运行。更多信息请查阅 [✅支持的设备列表说明](make-fnnas/fnnas-files/common-files/etc/model_database.conf)。如需添加新设备，可参考说明文档 12.15 章节的方法[添加新的支持设备](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/documents/README.cn.md#1215-如何添加新的支持设备)。
+> 目前 [s905 系列的盒子](https://github.com/ophub/amlogic-s9xxx-armbian/issues/1173)仅支持从 `TF/SD/USB` 启动使用，其他型号的盒子均支持写入 `eMMC` 运行。更多信息请查阅 [✅支持的设备列表说明](make-fnnas/fnnas-files/common-files/etc/model_database.conf)。如需添加新设备，可参考说明文档 12.15 章节的方法[✳️添加新的支持设备](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/documents/README.cn.md#1215-如何添加新的支持设备)。
 
 ## 安装及升级 FnNAS 的相关说明
 
