@@ -1,6 +1,6 @@
 # Orange Pi 5 Plus FnNAS 镜像启动问题排查笔记
 
-本文档记录 2026-07-02 至 2026-07-03 对 FnNAS Rockchip / Orange Pi 5 Plus 镜像启动、网络和 PostgreSQL 服务问题的排查结论、证据、已做修复和后续迭代方向。
+本文档记录 2026-07-02 至 2026-08-31 对 FnNAS Rockchip / Orange Pi 5 Plus 镜像启动、网络和 PostgreSQL 服务问题的排查结论、证据、已做修复和后续迭代方向。
 
 目标设备：
 
@@ -16,26 +16,65 @@
 
 当前 Orange Pi 5 Plus 默认验证基线使用 `6.18.18-trim` 内核，不再把官方 `6.1.43-rockchip-rk3588` 作为默认产物。官方 6.1.43 仍可作为网卡/DTB 对照排查用。
 
+BOOT 使用 Orange Pi 官方 30 MiB 偏移、1024 MiB 大小和兼容旧 U-Boot 的 ext4 文件系统。ext4 明确关闭 `64bit` 与 `metadata_csum`，同时保留官方风格的 `boot.scr/orangepiEnv.txt` 启动流程。
+
 当前推荐本地镜像：
 
 ```text
-\\wsl.localhost\Ubuntu-24.04\root\fnnas-build\manual-fat\fnnas_rockchip_orangepi-5-plus_official-script-kernel6.18.18_dbfix.img
+\\wsl.localhost\Ubuntu-24.04\root\fnnas-build\build-20260831-8341c32\fnnas\out\fnnas_rockchip_orangepi-5-plus_k6.18.18_2026.08.31_ext4boot_final.img
 ```
 
 校验：
 
 ```text
-SHA256: e299b91a3aa1a46e2578023c67b57afee04d588a1edad9611812d848f4f83467
+SHA256: 26fd78819e1db02f28c42f1e9ab1991db8e2628380bbcabb89ad1ce67d44ad4b
 Kernel: Linux version 6.18.18-trim
 Modules: 6.18.18-trim
 ```
 
-该镜像保留已验证能启动的 Orange Pi 官方 `boot.scr/orangepiEnv.txt` 启动方式，BOOT 分区加载 `Image`、`uInitrd`、`dtb/rockchip/rk3588-orangepi-5-plus.dtb` 后进入 `6.18.18-trim`。
+该镜像保留已验证能启动的 Orange Pi 官方 `boot.scr/orangepiEnv.txt` 启动方式，BOOT 分区加载 `Image`、`uInitrd`、`dtb/rockchip/rk3588-orangepi-5-plus.dtb` 后进入 `6.18.18-trim`。2026-08-31 现场验证已经进入 Debian 12、systemd 和 root 登录提示，双 RTL8125、NVMe、ROOTFS、Nginx 与 PostgreSQL 均正常初始化。
+
+同日使用电脑与 `eth1` 直连复验：RTL8125 协商为 2.5 Gbps 全双工，link-local 地址下 ping 正常；电脑侧访问 80 返回 302 并跳转至 5666，443 返回 302 并跳转至 5667，5666/5667 均返回 200，前端首个 JavaScript 静态资源也返回 200。PostgreSQL 15/main 为 online，实际执行 `select 1` 成功。
 
 串口登录默认账户：
 
 ```text
 root / root
+```
+
+## 烧录完整性问题
+
+Windows `upgrade_tool v2.44` 对整个 7.5 GiB 裸镜像执行 `wl 0 image.img` 时会显示 100% 并返回 0，但现场回读发现 ROOTFS 的部分非零数据被写成全零。首次启动因此出现：
+
+```text
+BTRFS warning (device mmcblk0p2): csum failed root 5 ino 73976 off 0 ...
+Kernel panic - not syncing: Attempted to kill init! exitcode=0x00007f00
+```
+
+inode `73976` 对应：
+
+```text
+/usr/lib/aarch64-linux-gnu/systemd/libsystemd-core-252.so
+```
+
+源镜像经过 `btrfs scrub` 检查 2.30 GiB 数据无错误，说明损坏发生在整文件烧录阶段，不是构建阶段。将同一物理区域提取成 2 MiB 小文件后，定点 `wl` 与 `rl` 回读 SHA256 完全一致，最终确认需要分块写入。
+
+仓库提供两个现场工具：
+
+- `tools/serial_monitor.py`：自动识别 CH340，按 1500000 8-N-1 记录原始字节和 UTF-8 文本，支持断线重连。
+- `tools/flash_rockchip_chunks.py`：默认按 128 MiB 分块写入，每块立即完整回读并比较 SHA256。
+
+本次实际烧录共 57 块，57/57 均通过回读校验。不要仅以 `upgrade_tool` 的进度 100% 或退出码 0 作为裸镜像烧录成功的依据。
+
+示例：
+
+```powershell
+python tools/flash_rockchip_chunks.py `
+  --tool tmp/rktools-win/upgrade_tool_v2.44_for_window/upgrade_tool.exe `
+  --loader tmp/rktools-win/loaders/MiniLoaderAll.bin `
+  --image tmp/images/fnnas_rockchip_orangepi-5-plus_k6.18.18_2026.08.31_ext4boot.img `
+  --work-dir tmp/rktools-win/chunk-flash `
+  --chunk-mib 128
 ```
 
 ## PostgreSQL 根因
@@ -80,7 +119,7 @@ postgresql@15-main.service: active (running)
 - 如果镜像包含 PostgreSQL，创建并修正 `var/log/postgresql`。
 - 将 PostgreSQL 监听地址收敛为 `127.0.0.1`，与现有 `pg_hba.conf` 的本地访问策略匹配。
 - Orange Pi 5 Plus 生成官方风格 `orangepiEnv.txt`，并用 `mkimage` 生成对应 `boot.scr`。
-- Orange Pi 5 Plus 使用官方风格 FAT BOOT 分区布局：BOOT 起始 30MiB，大小 1024MiB。
+- Orange Pi 5 Plus 使用官方偏移的兼容 ext4 BOOT：起始 30 MiB、大小 1024 MiB，并关闭 `64bit` 与 `metadata_csum`。
 
 关键期望权限：
 
@@ -89,6 +128,15 @@ drwxr-xr-x 755 root:root /usr/sbin
 drwxr-xr-x 755 root:root /usr/bin
 drwxrwxr-t 1775 root:postgres /var/log/postgresql
 ```
+
+## 其他服务修复
+
+2026-08-31 的完整启动验证还发现两个独立的服务脚本问题：
+
+- ARM64 镜像中的 `/etc/modules` 仍包含 x86 专用的 `msr`；Orange Pi 5 Plus 的 `rga3` 模块在当前 6.18.18 内核与 DTB 组合下返回 `Bad address`。删除这两个无效自动加载项后，`systemd-modules-load.service` 为 `active (exited)`。
+- 基础镜像的 `docker.service` 在停止时无条件执行 `docker stop --time 3 $(docker ps -a -q)`。当容器列表为空时，该命令没有参数并返回 1，使一次正常停止被 systemd 标记为失败。
+
+`renas` 已为 Docker 生成 drop-in：只有存在容器时才执行 `docker stop --timeout 3`。现场验证 Docker 28.2.2 可以正常停止、重新启动并保持 `active (running)`。
 
 ## 启动链结论
 
@@ -756,6 +804,23 @@ FnNAS 可能已经启动但无 HDMI 或 LED 行为不同。应检查：
 arp -a
 nmap -p 22,80,443,5666,5667,8000,8001 <device-ip>
 ```
+
+电脑和开发板直接连接时，链路中通常没有 DHCP 服务器。此时设备有载波但没有 IPv4 地址并不表示网卡或系统启动失败。先确认实际插入的接口：
+
+```bash
+ip -br link
+ethtool eth0 | grep -E 'Speed:|Duplex:|Link detected:'
+ethtool eth1 | grep -E 'Speed:|Duplex:|Link detected:'
+```
+
+Windows 有线口通常会自动获得 `169.254.0.0/16` 的 link-local 地址。可通过串口给已连接的设备网口临时增加同网段地址，例如：
+
+```bash
+ip link set eth1 up
+ip addr replace 169.254.88.2/16 dev eth1
+```
+
+随后从电脑访问 `http://169.254.88.2:5666/` 或 `https://169.254.88.2:5667/`。该地址只用于现场直连调试，重启后失效，不修改 NetworkManager 的 DHCP 配置；接回路由器后仍由 DHCP 获取正常局域网地址。
 
 ## 后续迭代建议
 

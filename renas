@@ -916,14 +916,30 @@ replace_kernel() {
     tar -mxzf "${kernel_boot}" -C "${tag_bootfs}"
     [[ "${PLATFORM}" == "allwinner" ]] && (cd "${tag_bootfs}" && cp -f "uInitrd-${kernel_name}" uInitrd && cp -f "vmlinuz-${kernel_name}" Image)
     [[ "${PLATFORM}" == "amlogic" ]] && (cd "${tag_bootfs}" && cp -f "uInitrd-${kernel_name}" uInitrd && cp -f "vmlinuz-${kernel_name}" zImage)
-    [[ "${PLATFORM}" == "rockchip" ]] && (cd "${tag_bootfs}" && ln -sf "uInitrd-${kernel_name}" uInitrd && ln -sf "vmlinuz-${kernel_name}" Image)
+    [[ "${PLATFORM}" == "rockchip" ]] && {
+        if [[ "${bootfs_type}" == "fat32" ]]; then
+            (cd "${tag_bootfs}" && cp -f "uInitrd-${kernel_name}" uInitrd && cp -f "vmlinuz-${kernel_name}" Image) ||
+                error_msg "Failed to create FAT-compatible Rockchip boot files."
+        else
+            (cd "${tag_bootfs}" && ln -sf "uInitrd-${kernel_name}" uInitrd && ln -sf "vmlinuz-${kernel_name}" Image) ||
+                error_msg "Failed to create Rockchip boot file links."
+        fi
+    }
     [[ "$(ls ${tag_bootfs}/*${kernel_name} -l 2>/dev/null | grep "^-" | wc -l)" -ge "2" ]] || error_msg "The /boot files is missing."
     [[ "${PLATFORM}" == "amlogic" ]] && get_textoffset "${tag_bootfs}/zImage"
 
     # 02. For /boot/dtb/${PLATFORM}/*
     [[ -d "${tag_bootfs}/dtb/${PLATFORM}" ]] || mkdir -p "${tag_bootfs}/dtb/${PLATFORM}"
     tar -mxzf "${kernel_dtb}" -C "${tag_bootfs}/dtb/${PLATFORM}"
-    [[ "${PLATFORM}" == "rockchip" ]] && ln -sf dtb "${tag_bootfs}/dtb-${kernel_name}"
+    [[ "${PLATFORM}" == "rockchip" ]] && {
+        if [[ "${bootfs_type}" == "fat32" ]]; then
+            cp -rf "${tag_bootfs}/dtb" "${tag_bootfs}/dtb-${kernel_name}" ||
+                error_msg "Failed to create the FAT-compatible Rockchip DTB directory."
+        else
+            ln -sf dtb "${tag_bootfs}/dtb-${kernel_name}" ||
+                error_msg "Failed to create the Rockchip DTB link."
+        fi
+    }
     [[ "$(ls ${tag_bootfs}/dtb/${PLATFORM} -l 2>/dev/null | grep "^-" | wc -l)" -ge "2" ]] || error_msg "/boot/dtb/${PLATFORM} files is missing."
 
     # 03. For /usr/src/linux-headers-${kernel_name}
@@ -1182,6 +1198,24 @@ refactor_rootfs() {
     for path_dir in usr/local/sbin usr/local/bin usr/sbin usr/bin; do
         [[ -d "${path_dir}" ]] && chown root:root "${path_dir}" && chmod 755 "${path_dir}"
     done
+
+    # Avoid loading architecture-incompatible or unusable modules on ARM boards.
+    for modules_file in etc/modules etc/modules-load.d/modules.conf; do
+        [[ -f "${modules_file}" ]] && sed -i -E '/^[[:space:]]*msr[[:space:]]*$/d' "${modules_file}"
+    done
+    [[ "${board}" == "orangepi-5-plus" && -f "etc/modules-load.d/trim-rk_vcodec.conf" ]] &&
+        sed -i -E '/^[[:space:]]*rga3[[:space:]]*$/d' etc/modules-load.d/trim-rk_vcodec.conf
+
+    # The base Docker unit calls `docker stop` with no arguments when there are
+    # no containers, which turns a clean stop into a failed systemd unit.
+    if [[ -f "etc/systemd/system/docker.service" ]]; then
+        mkdir -p etc/systemd/system/docker.service.d
+        cat >etc/systemd/system/docker.service.d/empty-container-stop.conf <<'EOF'
+[Service]
+ExecStop=
+ExecStop=/bin/sh -c 'containers="$(docker ps -a -q)"; [ -z "$containers" ] || docker stop --timeout 3 $containers'
+EOF
+    fi
 
     # Fix PostgreSQL runtime prerequisites when the base image includes it.
     if [[ -d "etc/postgresql" || -d "var/lib/postgresql" ]]; then
